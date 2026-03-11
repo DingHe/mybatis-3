@@ -36,10 +36,15 @@ import org.apache.ibatis.reflection.Reflector;
 /**
  * @author Clinton Begin
  */
+// 核心作用是通过反射机制实例化对象
+// MyBatis 需要创建一个对象（如结果集映射产生的 POJO、查询缓存的 List、关联查询的 Map 等）时，都会通过这个工厂来完成。它的设计解决了两个关键问题：
+// 接口适配：当目标类型是 List 或 Map 等接口时，它会自动映射到 ArrayList 或 HashMap 等具体实现类。
+// 权限处理：它能够处理私有构造函数的访问权限，确保即使构造函数不可见也能成功创建对象。
 public class DefaultObjectFactory implements ObjectFactory, Serializable {
 
   private static final long serialVersionUID = -8855120656740914948L;
 
+  // 使用默认无参构造函数创建对象。
   @Override
   public <T> T create(Class<T> type) {
     return create(type, null, null);

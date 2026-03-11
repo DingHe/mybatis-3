@@ -417,6 +417,7 @@
       </plugin>
 
       <!-- Remove enforcer entirely after parent 49 release -->
+      <!--
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-enforcer-plugin</artifactId>
@@ -429,6 +430,7 @@
           </rules>
         </configuration>
       </plugin>
+      -->
 
       <plugin>
         <groupId>com.rudikershaw.gitbuildhook</groupId>

@@ -49,6 +49,7 @@ public final class PropertyNamer {
     return isGetter(name) || isSetter(name);
   }
 
+  // 方法要是get或者is开头
   public static boolean isGetter(String name) {
     return name.startsWith("get") && name.length() > 3 || name.startsWith("is") && name.length() > 2;
   }

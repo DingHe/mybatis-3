@@ -24,6 +24,11 @@ import java.sql.SQLException;
  *
  * @author Clinton Begin
  */
+// Transaction 接口的主要作用是封装数据库连接（Connection）并管理其生命周期。
+// 通过这个接口，MyBatis 将事务管理的具体实现与上层的 Executor（执行器）解耦。它的核心职责包括：
+// 连接管理：负责数据库连接的获取、准备和关闭。
+// 行为抽象：将不同环境下的事务行为（如 JDBC 原生管理、托管给 Spring 或容器管理）统一为一套 API。
+// 生命周期控制：确保在业务操作完成后，连接能够被正确地提交、回滚或关闭。
 public interface Transaction {
 
   /**
@@ -34,6 +39,9 @@ public interface Transaction {
    * @throws SQLException
    *           the SQL exception
    */
+  // 作用：获取当前事务持有的数据库连接对象。
+  // 最核心的方法。实现类（如 JdbcTransaction）通常会在此方法中进行连接的延迟加载（Lazy Load）。
+  // 即只有在真正需要执行 SQL 时，才会通过数据源（DataSource）获取连接，并负责设置连接的属性（如隔离级别、自动提交状态等）。
   Connection getConnection() throws SQLException;
 
   /**
@@ -42,6 +50,8 @@ public interface Transaction {
    * @throws SQLException
    *           the SQL exception
    */
+  // 提交当前事务
+  // 将该连接上所有未提交的更改持久化到数据库中。在不同的实现中，行为可能不同：
   void commit() throws SQLException;
 
   /**

@@ -28,11 +28,19 @@ import org.apache.ibatis.mapping.MappedStatement;
  *
  * @author Kazuki Shimizu
  */
+// AutoMappingUnknownColumnBehavior 是 MyBatis 3.4.0 版本引入的一个枚举类。它与 AutoMappingBehavior 配合使用，专门负责处理自动映射过程中出现的“异常情况”。
+// 该类的主要作用是：指定当 MyBatis 探测到无法处理的自动映射列（或未知属性类型）时的行为策略。
+// 在自动映射过程中，可能会遇到以下两种棘手情况：
+// 找不到匹配属性：SQL 查询返回了一个列，但在目标 Java 对象中找不到对应的属性名。
+// 缺少类型处理器：找到了对应的属性，但该属性的类型没有注册相应的 TypeHandler（导致无法完成转换）。
+// 通过这个类，你可以决定当这些情况发生时，是“假装没看见”、“打印警告日志”还是“直接让程序报错”。
 public enum AutoMappingUnknownColumnBehavior {
 
   /**
    * Do nothing (Default).
    */
+  // 默认行为
+  // 什么都不做。这是最常用的模式，MyBatis 会静默忽略掉那些无法映射的列。
   NONE {
     @Override
     public void doAction(MappedStatement mappedStatement, String columnName, String property, Type propertyType) {
@@ -44,6 +52,8 @@ public enum AutoMappingUnknownColumnBehavior {
    * Output warning log. Note: The log level of {@code 'org.apache.ibatis.session.AutoMappingUnknownColumnBehavior'}
    * must be set to {@code WARN}.
    */
+  // 警告模式
+  // 打印一条警告（WARN）级别的日志。你需要确保日志配置中开启了对该类的 WARN 级别监控。
   WARNING {
     @Override
     public void doAction(MappedStatement mappedStatement, String columnName, String property, Type propertyType) {
@@ -54,6 +64,8 @@ public enum AutoMappingUnknownColumnBehavior {
   /**
    * Fail mapping. Note: throw {@link SqlSessionException}.
    */
+  // 失败模式
+  // 直接抛出 SqlSessionException。这是一种“防御式编程”策略，强制开发者必须处理所有返回的列，确保映射百分之百精确。
   FAILING {
     @Override
     public void doAction(MappedStatement mappedStatement, String columnName, String property, Type propertyType) {

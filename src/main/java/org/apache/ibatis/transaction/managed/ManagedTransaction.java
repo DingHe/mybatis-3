@@ -34,6 +34,12 @@ import org.apache.ibatis.transaction.Transaction;
  *
  * @see ManagedTransactionFactory
  */
+// ManagedTransaction 是 MyBatis 对 Transaction 接口的另一种重要实现。它的设计哲学与 JdbcTransaction 截然不同，主要用于“托管”环境。
+// ManagedTransaction 的核心作用是：让容器（如 Java EE 应用服务器或 Spring）来完全管理事务的生命周期。
+// 在托管模式下，MyBatis 假定事务的开启、提交和回滚已经由外部环境处理好了。它的特点包括：
+// 不干预事务状态：它的 commit() 和 rollback() 方法是空的，不会对数据库连接执行任何实际操作。
+// 连接获取管理：虽然不管理事务逻辑，但它仍然负责在需要时从 DataSource 获取连接。
+// 可选的关闭策略：它允许配置是否在会话结束时关闭连接。
 public class ManagedTransaction implements Transaction {
 
   private static final Log log = LogFactory.getLog(ManagedTransaction.class);

@@ -43,13 +43,20 @@ import org.apache.ibatis.session.SqlSession;
  *
  * @author Clinton Begin
  */
+// DefaultSqlSession 的核心作用是将高级的数据库操作请求（如 selectList, update）委派给底层的 执行器（Executor） 去处理。
+// 委派者角色：它本身不负责 SQL 的解析或事务的底层开启，而是充当门面（Facade），协调 Configuration 和 Executor。
+// 状态维护：记录当前会话是否为“脏”（有未提交的变更），管理已打开的游标（Cursor）。
+// 线程不安全：该类不是线程安全的，因此每个线程或请求都应该拥有自己独立的 SqlSession 实例。
 public class DefaultSqlSession implements SqlSession {
-
+  // MyBatis 的全局配置对象，用于获取 SQL 映射语句（MappedStatement）等元数据。
   private final Configuration configuration;
+  // 核心引擎。实际负责 SQL 查询、更新以及事务管理的执行器。
   private final Executor executor;
-
+  // 是否自动提交。由 SqlSessionFactory 创建时传入。
   private final boolean autoCommit;
+  // 脏标志位。如果执行了 insert/update/delete，该位设为 true，表示需要提交。
   private boolean dirty;
+  // 记录当前会话打开的所有游标，以便在会话关闭时统一关闭，防止内存泄漏。
   private List<Cursor<?>> cursorList;
 
   public DefaultSqlSession(Configuration configuration, Executor executor, boolean autoCommit) {
@@ -93,15 +100,21 @@ public class DefaultSqlSession implements SqlSession {
     return this.selectMap(statement, parameter, mapKey, RowBounds.DEFAULT);
   }
 
+  // 设计非常巧妙：它并没有重新写一套查询逻辑，而是复用了 selectList 的查询能力，然后通过“结果处理器”模式将 List 转换为 Map。
+  // 执行 SQL 查询得到一个结果列表，并根据你指定的属性名（mapKey），将列表中的每一个对象作为一个 Value 存入 Map，而该对象的 mapKey 属性值则作为 Map 的 Key。
   @Override
   public <K, V> Map<K, V> selectMap(String statement, Object parameter, String mapKey, RowBounds rowBounds) {
+    // 完成了最重的活——通过执行器（Executor）去数据库查询数据，并将结果集（ResultSet）转换成 Java 对象列表。此时数据已经在内存中了。
     final List<? extends V> list = selectList(statement, parameter, rowBounds);
+    // 创建一个专门负责将对象“塞进” Map 的处理器。
+    // mapKey：你指定的属性（如 "id"）。
     final DefaultMapResultHandler<K, V> mapResultHandler = new DefaultMapResultHandler<>(mapKey,
         configuration.getObjectFactory(), configuration.getObjectWrapperFactory(), configuration.getReflectorFactory());
+    // ResultContext 像是一个“容器”，它在循环处理过程中持有当前正在被处理的那个对象，并控制处理流程（例如可以中途停止处理）。
     final DefaultResultContext<V> context = new DefaultResultContext<>();
     for (V o : list) {
-      context.nextResultObject(o);
-      mapResultHandler.handleResult(context);
+      context.nextResultObject(o); // 1. 将当前对象放入上下文
+      mapResultHandler.handleResult(context); // 2. 处理器从上下文中取对象，提取 Key，存入 Map
     }
     return mapResultHandler.getMappedResults();
   }

@@ -32,12 +32,22 @@ import org.apache.ibatis.reflection.wrapper.ObjectWrapperFactory;
 /**
  * @author Clinton Begin
  */
+// MetaObject 的核心作用是：提供一种统一、便捷且支持嵌套路径的方式来访问和修改对象。
+// 在处理 SQL 映射时，MyBatis 经常需要处理类似 person.address.city 这种嵌套属性，或者底层对象可能是个 HashMap，也可能是个 User 实体类。MetaObject 通过整合
+// ObjectWrapper、Reflector 和 PropertyTokenizer 等组件，屏蔽了这些复杂性：
+// 统一入口：无论底层是 Bean、Map 还是 Collection，都通过 getValue 和 setValue 访问。
+// 支持级联：天然支持 .（对象嵌套）和 []（集合索引）语法。
+// 自动容错：它能处理属性值为 null 的中间链路。
 public class MetaObject {
-
+  // 原始对象。被包装的真实数据对象
   private final Object originalObject;
+  // 对象包装器。决定了如何具体地 get/set（是按 Bean 的方式还是按 Map 的方式）。
   private final ObjectWrapper objectWrapper;
+  // 对象工厂。用于在级联操作中，当某个属性为 null 时创建新实例。
   private final ObjectFactory objectFactory;
+  // 包装器工厂。用于创建自定义的 ObjectWrapper。
   private final ObjectWrapperFactory objectWrapperFactory;
+  // 反射工厂。用于缓存和获取类元数据（Reflector）。
   private final ReflectorFactory reflectorFactory;
 
   private MetaObject(Object object, ObjectFactory objectFactory, ObjectWrapperFactory objectWrapperFactory,
