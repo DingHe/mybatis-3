@@ -57,15 +57,27 @@ import org.apache.ibatis.session.Configuration;
  * @author Clinton Begin
  * @author Kazuki Shimizu
  */
+// 负责管理 Java 类型与 JDBC 类型之间的“翻译官”——类型处理器（TypeHandler）。
+// 注册中心：维护 Java 类型、JDBC 类型与 TypeHandler 实例之间的映射关系。
+// 查询枢纽：在 MyBatis 执行 SQL 前（设置参数）和执行 SQL 后（处理结果集）查找合适的处理器。
+// 默认配置：内置了 Java 常见类型（String, Integer, Date, LocalDate 等）的默认处理逻辑。
+// 类型转换：它是 Java 对象与数据库字段数据之间转换的策略中心。
 public final class TypeHandlerRegistry {
-
+  // 仅根据 JdbcType 查找处理器的映射表。通常用于 Java 类型未知或作为最后的备选方案。
   private final Map<JdbcType, TypeHandler<?>> jdbcTypeHandlerMap = new EnumMap<>(JdbcType.class);
+  // 核心映射表。
+  // 第一层 Key 是 Java 类型，嵌套的 Map 以 JdbcType 为 Key 对应具体的处理器。
+  // 这允许同一个 Java 类型在面对不同数据库列类型时使用不同的逻辑。
   private final Map<Type, Map<JdbcType, TypeHandler<?>>> typeHandlerMap = new ConcurrentHashMap<>();
+  // 存储“智能处理器”的构造方法。
+  // 这些处理器通常拥有接收 Class 或 Type 的构造函数，可以根据具体的泛型信息动态创建实例。
   private final ConcurrentHashMap<Type, Constructor<?>> smartHandlers = new ConcurrentHashMap<>();
+  // 存储所有已注册处理器的 Class 对象及其单例实例，主要用于快速检查某个处理器类是否已经实例化。
   private final Map<Class<?>, TypeHandler<?>> allTypeHandlersMap = new HashMap<>();
-
+  // 一个空标记 Map，
+  // 用于在 typeHandlerMap 中表示“该 Java 类型没有任何处理器”，避免重复查找。
   private static final Map<JdbcType, TypeHandler<?>> NULL_TYPE_HANDLER_MAP = Collections.emptyMap();
-
+  // 默认的枚举类型处理器，默认为 EnumTypeHandler。
   @SuppressWarnings("rawtypes")
   private Class<? extends TypeHandler> defaultEnumTypeHandler = EnumTypeHandler.class;
 
@@ -214,6 +226,7 @@ public final class TypeHandlerRegistry {
     return getTypeHandler(javaTypeReference, null);
   }
 
+  // 仅根据 JDBC 类型（JdbcType）来获取对应的类型处理器。
   public TypeHandler<?> getTypeHandler(JdbcType jdbcType) {
     return jdbcTypeHandlerMap.get(jdbcType);
   }
@@ -240,16 +253,22 @@ public final class TypeHandlerRegistry {
     return typeHandler;
   }
 
+  // 最为核心、逻辑最复杂的查询方法。
+  // 它定义了 MyBatis 在运行时如何通过“Java 类型 + JDBC 类型”这对双轴坐标，精准定位到一个具体的 TypeHandler
+  // 在执行 SQL（设置参数）或处理结果集（读取列值）时，MyBatis 需要知道如何处理某个字段。这个方法负责回答：“已知 Java 类型是 $A$，数据库列类型是 $B$，我该用哪个处理器？”
   public TypeHandler<?> getTypeHandler(Type type, JdbcType jdbcType) {
+    // ParamMap 拦截：如果类型是 ParamMap（MyBatis 内部处理多参数的 Map），则不使用具体的处理器，返回 null。
     if (ParamMap.class.equals(type)) {
       return null;
     } else if (type == null) {
+      // Java 类型为空：如果不知道 Java 类型，则降级调用 getTypeHandler(jdbcType)，仅根据数据库类型找一个保底的处理器。
       return getTypeHandler(jdbcType);
     }
 
     TypeHandler<?> handler = null;
+    // 查找当前类及其父类，获取该 Java 类型下所有已注册的 JDBC 映射关系
     Map<JdbcType, TypeHandler<?>> jdbcHandlerMap = getJdbcHandlerMap(type);
-
+    // 如果 Java 类型就是最顶层的 Object，逻辑比较简单：直接看 Object 下有没有对应这个 jdbcType 的处理器。如果有就返回，没有就结束（不进行后续的模糊匹配）
     if (Object.class.equals(type)) {
       if (jdbcHandlerMap != null) {
         handler = jdbcHandlerMap.get(jdbcType);
@@ -258,19 +277,20 @@ public final class TypeHandlerRegistry {
     }
 
     if (jdbcHandlerMap != null) {
-      handler = jdbcHandlerMap.get(jdbcType);
+      handler = jdbcHandlerMap.get(jdbcType); // 1. 精确匹配
       if (handler == null) {
-        handler = jdbcHandlerMap.get(null);
+        handler = jdbcHandlerMap.get(null); // 2. 默认匹配（JDBC 类型为 null）
       }
       if (handler == null) {
         // #591
-        handler = pickSoleHandler(jdbcHandlerMap);
+        handler = pickSoleHandler(jdbcHandlerMap); // 3. 唯一性匹配
       }
     }
     if (handler == null) {
-      handler = getSmartHandler(type, jdbcType);
+      handler = getSmartHandler(type, jdbcType); // 4. 智能处理器
     }
     if (handler == null && type instanceof ParameterizedType) {
+      // 5. 泛型擦除后尝试
       handler = getTypeHandler((Class<?>) ((ParameterizedType) type).getRawType(), jdbcType);
     }
     return handler;
@@ -322,21 +342,28 @@ public final class TypeHandlerRegistry {
     }
   }
 
+  // 针对给定的 Java 类型，获取其对应的 JDBC 处理器映射表，并支持向上继承搜索和结果缓存。
   private Map<JdbcType, TypeHandler<?>> getJdbcHandlerMap(Type type) {
     Map<JdbcType, TypeHandler<?>> jdbcHandlerMap = typeHandlerMap.get(type);
+    // 空标记处理：如果获取到了 NULL_TYPE_HANDLER_MAP（这是一个预定义的空 Map），
+    // 说明之前查过，且结论是“该类型没有任何处理器”，此时直接返回 null。这是一种典型的空对象模式，用来防止缓存穿透。
     if (jdbcHandlerMap != null) {
       return NULL_TYPE_HANDLER_MAP.equals(jdbcHandlerMap) ? null : jdbcHandlerMap;
     }
+    // 如果 type 是一个普通的 Class 对象
+    // 排除枚举：枚举类型的处理逻辑比较特殊（通常由 EnumTypeHandler 统一动态生成），所以这里排除枚举，只处理普通类。
     if (type instanceof Class) {
       Class<?> clazz = (Class<?>) type;
       if (!Enum.class.isAssignableFrom(clazz)) {
         jdbcHandlerMap = getJdbcHandlerMapForSuperclass(clazz);
       }
     }
+    // 写入缓存并返回
     typeHandlerMap.put(type, jdbcHandlerMap == null ? NULL_TYPE_HANDLER_MAP : jdbcHandlerMap);
     return jdbcHandlerMap;
   }
 
+  // 核心任务是：当当前类没有直接关联的类型处理器时，沿着 Java 继承链 向上攀爬，寻找其父类是否注册了处理器
   private Map<JdbcType, TypeHandler<?>> getJdbcHandlerMapForSuperclass(Class<?> clazz) {
     Class<?> superclass = clazz.getSuperclass();
     if (superclass == null || Object.class.equals(superclass)) {

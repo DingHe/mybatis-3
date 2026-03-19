@@ -25,6 +25,8 @@ import org.apache.ibatis.session.Configuration;
 /**
  * @author Clinton Begin
  */
+// StaticSqlSource 是 SqlSource 接口中最简单、最直接的实现类。它代表了那些在运行过程中不需要任何动态逻辑处理的 SQL 语句。
+// StaticSqlSource 的核心作用是：封装已经解析完成的静态 SQL 文本及其参数映射关系，并在请求时直接生成 BoundSql。
 public class StaticSqlSource implements SqlSource {
 
   private final String sql;

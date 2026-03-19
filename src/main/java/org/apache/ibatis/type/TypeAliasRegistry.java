@@ -35,8 +35,17 @@ import org.apache.ibatis.io.Resources;
 /**
  * @author Clinton Begin
  */
+// MyBatis 框架中负责类型别名管理的核心组件：TypeAliasRegistry。
+// 在 MyBatis 中，为了避免在 XML 映射文件或注解中书写冗长的全类名（Fully Qualified Name），我们可以为类起一个简短的“别名”，这个类就是存储和管理这些映射关系的“仓库”。
+// 维护映射关系：建立一个字符串（别名）到 Java Class 对象的映射。
+// 简化配置：允许开发者使用简短的名称（如 int 代表 java.lang.Integer）来引用复杂的类型。
+// 自动注册基础类型：在初始化时，它会自动注册 Java 常见的基础类型、包装类、集合类及其数组形式。
+// 支持注解解析：能够识别 @Alias 注解，从而实现灵活的别名定义。
+// 解析类型：根据给定的字符串（可能是别名，也可能是全类名）找到对应的 Class 对象。
 public class TypeAliasRegistry {
-
+  // 该类的核心容器，用于存储所有的别名映射。
+  // Key 是别名的小写形式（为了实现别名的大小写无关性）。
+  // Value 是对应的 Java 类的 Class 对象。
   private final Map<String, Class<?>> typeAliases = new HashMap<>();
 
   public TypeAliasRegistry() {
@@ -110,6 +119,7 @@ public class TypeAliasRegistry {
 
   @SuppressWarnings("unchecked")
   // throws class cast exception as well if types cannot be assigned
+  // 将一个字符串解析为 Class 对象。
   public <T> Class<T> resolveAlias(String string) {
     try {
       if (string == null) {
@@ -129,10 +139,12 @@ public class TypeAliasRegistry {
     }
   }
 
+  // 扫描指定包名下的所有类，并自动注册别名。
   public void registerAliases(String packageName) {
     registerAliases(packageName, Object.class);
   }
 
+  // 扫描指定包下，且是 superType 子类的所有类进行注册。
   public void registerAliases(String packageName, Class<?> superType) {
     ResolverUtil<Class<?>> resolverUtil = new ResolverUtil<>();
     resolverUtil.find(new ResolverUtil.IsA(superType), packageName);
@@ -146,8 +158,12 @@ public class TypeAliasRegistry {
     }
   }
 
+  // 注册一个类
   public void registerAlias(Class<?> type) {
     String alias = type.getSimpleName();
+    // 检查该类是否标记了 @Alias 注解。
+    // 如果有注解，使用注解的值作为别名。
+    // 如果没有注解，直接使用类的短名称（getSimpleName()）。
     Alias aliasAnnotation = type.getAnnotation(Alias.class);
     if (aliasAnnotation != null) {
       alias = aliasAnnotation.value();
@@ -155,6 +171,8 @@ public class TypeAliasRegistry {
     registerAlias(alias, type);
   }
 
+  // 注册的核心逻辑
+  // 将指定的字符串与类绑定。
   public void registerAlias(String alias, Class<?> value) {
     if (alias == null) {
       throw new TypeException("The parameter alias cannot be null");
@@ -168,6 +186,7 @@ public class TypeAliasRegistry {
     typeAliases.put(key, value);
   }
 
+  // 根据字符串形式的类名注册别名
   public void registerAlias(String alias, String value) {
     try {
       registerAlias(alias, Resources.classForName(value));
@@ -183,6 +202,7 @@ public class TypeAliasRegistry {
    *
    * @since 3.2.2
    */
+  // 对外暴露当前所有的别名映射。
   public Map<String, Class<?>> getTypeAliases() {
     return Collections.unmodifiableMap(typeAliases);
   }

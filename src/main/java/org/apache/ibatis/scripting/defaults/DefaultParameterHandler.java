@@ -45,18 +45,28 @@ import org.apache.ibatis.type.TypeHandlerRegistry;
  * @author Clinton Begin
  * @author Eduardo Macarron
  */
+// DefaultParameterHandler 是 MyBatis 默认提供的参数处理器实现类。它是 SQL 执行链路中的关键环节，负责将 Java 方法传入的参数精准地“填入” SQL 语句的占位符中。
+// 其核心职责是 “解析与赋值”：
+// 解析：从复杂的 parameterObject（可能是单个对象、Map、或者是带有 @Param 注解的多参数）中，根据 SQL 脚本生成的 ParameterMapping 提取出正确的值。
+// 赋值：通过 TypeHandler 将这些值转换成 JDBC 类型，并执行 PreparedStatement.setXXX()。
 public class DefaultParameterHandler implements ParameterHandler {
-
+  // 类型处理器注册表，用于查找合适的 TypeHandler（如 StringTypeHandler）。
   private final TypeHandlerRegistry typeHandlerRegistry;
-
+  // 包含了当前 SQL 的详细配置（ID、SQL 类型等）。
   private final MappedStatement mappedStatement;
+  // 用户传入的原始参数对象。
   private final Object parameterObject;
+  // 包含动态生成的 SQL 字符串和参数映射列表（ParameterMapping）
   private final BoundSql boundSql;
+  // MyBatis 全局配置。
   private final Configuration configuration;
-
+  // DBC 的参数元数据，用于获取数据库期待的参数类型。
   private ParameterMetaData paramMetaData;
+  // 参数对象的元对象，通过它可以用 propertyName 快速反射取值。
   private MetaObject paramMetaObject;
+  // MetaClass 的缓存，用于提高反射性能。
   private HashMap<Class<?>, MetaClass> metaClassCache = new HashMap<>();
+  // 当数据库驱动不支持获取 ParameterMetaData 时，作为空对象（Null Object）使用，防止空指针。
   private static final ParameterMetaData NULL_PARAM_METADATA = new ParameterMetaData() {
     // @formatter:off
     public <T> T unwrap(Class<T> iface) throws SQLException { return null; }
@@ -87,6 +97,7 @@ public class DefaultParameterHandler implements ParameterHandler {
   }
 
   @SuppressWarnings({ "rawtypes", "unchecked" })
+  // MyBatis 参数绑定的核心逻辑。它的目标非常明确：遍历 SQL 中的每一个 ? 占位符，从 Java 入参中找到对应的值，并交给合适的 TypeHandler 处理。
   @Override
   public void setParameters(PreparedStatement ps) {
     ErrorContext.instance().activity("setting parameters").object(mappedStatement.getParameterMap().getId());
@@ -95,15 +106,19 @@ public class DefaultParameterHandler implements ParameterHandler {
       ParamNameResolver paramNameResolver = mappedStatement.getParamNameResolver();
       for (int i = 0; i < parameterMappings.size(); i++) {
         ParameterMapping parameterMapping = parameterMappings.get(i);
+        // 只处理输入参数（IN/INOUT）。如果是存储过程的纯输出参数（OUT），在这里不进行赋值。
         if (parameterMapping.getMode() != ParameterMode.OUT) {
           Object value;
           String propertyName = parameterMapping.getProperty();
+          // 确定 JDBC 类型 (JdbcType)
           JdbcType jdbcType = parameterMapping.getJdbcType();
           JdbcType actualJdbcType = jdbcType == null ? getParamJdbcType(ps, i + 1) : jdbcType;
           Type propertyGenericType = null;
+          // 类型处理器
           TypeHandler typeHandler = parameterMapping.getTypeHandler();
           if (parameterMapping.hasValue()) {
             value = parameterMapping.getValue();
+            // 典型场景：<foreach> 循环。循环中的临时变量 item 就存在这里，优先级非常高。
           } else if (boundSql.hasAdditionalParameter(propertyName)) { // issue #448 ask first for additional params
             value = boundSql.getAdditionalParameter(propertyName);
           } else if (parameterObject == null) {

@@ -32,32 +32,65 @@ import org.apache.ibatis.session.Configuration;
 /**
  * @author Clinton Begin
  */
+// 在 MyBatis 的架构中，MappedStatement 是一个至关重要的类。如果把 MyBatis 比作一个运行引擎，那么 MappedStatement 就是这个引擎的“指令集”。
+// MappedStatement 的作用是代表 SQL 映射语句在内存中的完整定义。
+// 在 XML 映射文件中定义的每一个 <select>, <insert>, <update>, <delete> 标签，或者在 Mapper 接口中使用注解定义的 SQL 语句，在 MyBatis 启动并解析配置后，都会在全局
+// Configuration 对象中对应生成一个 MappedStatement 实例。
+// 它封装了执行一条 SQL 所需的所有信息，包括：
+// SQL 内容：如何根据参数生成最终的 SQL 字符串。
+// 输入映射：如何处理传入的参数。
+// 输出映射：如何将结果集（ResultSet）转换为 Java 对象。
+// 行为策略：是否开启缓存、超时时间、主键生成方案等。
 public final class MappedStatement {
-
+  // 记录该语句来源的资源路径（如 com/example/UserMapper.xml）
   private String resource;
+  // 引用全局配置对象
   private Configuration configuration;
+  // 语句的唯一标识，通常是 namespace + methodId。
   private String id;
+  // 驱动提示：每次从数据库读取的数据行数。
   private Integer fetchSize;
+  // 数据库查询超时时间（秒）。
   private Integer timeout;
+  // 语句执行类型（STATEMENT直接执行, PREPARED预处理, CALLABLE存储过程）。
   private StatementType statementType;
+  // 结果集滚动类型（如 FORWARD_ONLY, SCROLL_INSENSITIVE 等）。
   private ResultSetType resultSetType;
+  // 关键属性。负责根据运行时参数生成 BoundSql。
   private SqlSource sqlSource;
+  // 二级缓存引用。如果该语句配置了缓存，则指向对应的 Cache 实现。
   private Cache cache;
+  // 参数映射定义（主要用于存储过程或老式配置）。
   private ParameterMap parameterMap;
+  // 结果映射列表。定义了如何将数据库列映射到 Java 属性。
   private List<ResultMap> resultMaps;
+  // 是否在执行该语句后强制刷新缓存（默认 update/insert/delete 为 true）。
   private boolean flushCacheRequired;
+  // 该语句是否使用二级缓存（默认 select 为 true）。
   private boolean useCache;
+  // 仅针对嵌套查询，是否按结果排序。
   private boolean resultOrdered;
+  // SQL 命令类型（UNKNOWN, INSERT, UPDATE, DELETE, SELECT, FLUSH）。
   private SqlCommandType sqlCommandType;
+  // 主键生成器（如 Jdbc3KeyGenerator 获取自增主键）。
   private KeyGenerator keyGenerator;
+  // 对应 Java 实体类中接收主键的属性名。
   private String[] keyProperties;
+  // 对应数据库中作为主键的列名。
   private String[] keyColumns;
+  // 标记位，指示结果映射中是否包含嵌套查询或集合。
   private boolean hasNestedResultMaps;
+  // 多数据库支持的标识。
   private String databaseId;
+  // 该语句专用的日志对象。
   private Log statementLog;
+  // 脚本语言驱动（处理动态 SQL 的逻辑引擎）。
   private LanguageDriver lang;
+  // 多结果集处理时的结果集名称。
   private String[] resultSets;
+  // 参数名解析器，用于处理方法参数到 SQL 的映射。
   private ParamNameResolver paramNameResolver;
+  // 标记是否允许在脏读环境下执行查询。
   private boolean dirtySelect;
 
   MappedStatement() {

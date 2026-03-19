@@ -24,10 +24,20 @@ import org.apache.ibatis.session.Configuration;
 /**
  * @author Clinton Begin
  */
+// 在 MyBatis 的执行引擎中，DynamicSqlSource 是处理动态 SQL（即包含 <if>, <where>, <foreach> 等标签或 ${} 占位符的 SQL）的核心实现类。
+// DynamicSqlSource 的主要作用是在运行时根据传入的参数对象，实时生成可执行的 SQL 语句。
+// 由于动态 SQL 的最终形态取决于运行时的参数值（例如某个字段为 null 时不参与更新），因此 DynamicSqlSource 不能像 StaticSqlSource 那样在启动时就确定 SQL 结构。它负责执行以下流程：
+// 节点遍历：解析并执行所有的动态标签逻辑。
+// 变量替换：处理 ${} 文本替换。
+// 参数映射提取：将解析后的 SQL（含有 #{}）交给 SqlSourceBuilder 转化为含有 ? 的标准 JDBC SQL。
 public class DynamicSqlSource implements SqlSource {
-
+  // MyBatis 的全局配置对象，用于获取反射工厂、类型处理器注册表等核心资源。
   private final Configuration configuration;
+  // 动态 SQL 节点树的根节点。
+  // 在解析 XML 映射文件时，动态 SQL 会被解析成一棵由不同 SqlNode 实现类（如 IfSqlNode, MixedSqlNode, TextSqlNode 等）组成的树。
   private final SqlNode rootSqlNode;
+  // 参数名称解析器。
+  // 用于处理 Mapper 接口方法中的参数（如 @Param 映射），确保在动态上下文中能准确找到参数值。
   private final ParamNameResolver paramNameResolver;
 
   public DynamicSqlSource(Configuration configuration, SqlNode rootSqlNode) {

@@ -24,20 +24,37 @@ import org.apache.ibatis.type.TypeHandler;
 /**
  * @author Clinton Begin
  */
+// 详细描述了 SQL 语句中某一个占位符（即 #{}）与 Java 对象属性之间的映射规则。
+// ParameterMapping 的核心作用是：定义如何将 Java 环境中的一个参数值转换并绑定到 JDBC 的 PreparedStatement 中。
+// 当 MyBatis 解析 SQL 语句中的 #{property, jdbcType=VARCHAR...} 时，每一个这样的占位符都会被解析为一个 ParameterMapping 实例。它是 BoundSql
+// 对象的重要组成部分，确保了：
+// 参数定位：知道该从 Java 对象的哪个属性获取值。
+// 类型转换：知道该使用哪个 TypeHandler 进行类型转换。
+// 存储过程支持：描述参数是输入（IN）、输出（OUT）还是输入输出（INOUT）模式。
 public class ParameterMapping {
-
+  // 静态常量，用于标记 value 属性是否被设置过（区分 null 值）。
   private static final Object UNSET = new Object();
+  // 引用 MyBatis 的全局配置对象。
   private Configuration configuration;
-
+  // 属性名。对应 #{} 中的名称，用于从实参对象中提取值。
   private String property;
+  // 参数模式。默认为 IN。在存储过程中支持 OUT 和 INOUT。
   private ParameterMode mode;
+  // Java 类型。该参数在 Java 对象中的类型，默认为 Object.class。
   private Class<?> javaType = Object.class;
+  // JDBC 类型。数据库对应的列类型（如 VARCHAR, TIMESTAMP）。
   private JdbcType jdbcType;
+  // 数值精度。主要用于处理 DECIMAL 或 NUMERIC 类型的浮点数精度。
   private Integer numericScale;
+  // 类型处理器。负责具体执行 Java 对象与 JDBC 参数之间的转换。
   private TypeHandler<?> typeHandler;
+  // 结果映射 ID。当参数类型为 ResultSet（存储过程游标）时，指定处理该结果集的 ResultMap。
   private String resultMapId;
+  // JDBC 类型名称。主要用于某些特殊数据库要求的用户自定义类型（User Defined Types）。
   private String jdbcTypeName;
+  // 表达式。目前 MyBatis 核心逻辑中基本不使用，留作扩展。
   private String expression;
+  // 固定值。如果设置了此值，则不再从参数对象中提取，直接使用该值。
   private Object value = UNSET;
 
   private ParameterMapping() {

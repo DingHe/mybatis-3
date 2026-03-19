@@ -78,49 +78,94 @@ import org.apache.ibatis.type.TypeHandlerRegistry;
  * @author Kazuki Shimizu
  * @author Willie Scholtz
  */
+// DefaultResultSetHandler 是 MyBatis 中最为庞大且复杂的类之一。它是 ResultSetHandler 接口的默认实现，负责将 JDBC 返回的原始 ResultSet（结果集）映射为 Java
+// 对象（POJO、Map、List、Cursor 等）。
+// 核心任务是结果映射（Result Mapping）。它在 SQL 执行完毕后介入，执行以下逻辑：
+// 处理输出参数：针对存储过程，处理 OUT 或 INOUT 参数。
+// 实例化对象：根据 ResultMap 的定义，决定是调用无参构造函数还是有参构造函数（Constructor Injection）来创建 Java 对象。
+// 属性填充：通过 TypeHandler 读取列值，并利用 MetaObject（反射）将值设置到对象的属性中。
+// 处理自动映射：如果开启了 autoMapping，它会自动匹配数据库列名与 Java 属性名。
+// 处理嵌套映射：处理级联查询（一对一 association、一对多 collection），包括嵌套查询和嵌套结果集。
+// 多结果集处理：支持一个 SQL 语句返回多个不同的结果集。
 public class DefaultResultSetHandler implements ResultSetHandler {
 
   private static final Object DEFERRED = new Object();
-
+  // 当前的执行器，用于处理嵌套查询时的二次执行。
   private final Executor executor;
+  // MyBatis 全局配置信息。
   private final Configuration configuration;
+  // 当前 SQL 映射语句的详细信息。
   private final MappedStatement mappedStatement;
+  // 分页参数，用于内存分页（skip 和 limit）。
   private final RowBounds rowBounds;
+  // 参数处理器，在处理存储过程输出参数时使用。
   private final ParameterHandler parameterHandler;
+  // 用户自定义的结果处理器（若有）。
   private final ResultHandler<?> resultHandler;
+  // 包含最终生成的 SQL 语句及参数映射。
   private final BoundSql boundSql;
+  // 类型处理器注册表，用于获取 TypeHandler。
   private final TypeHandlerRegistry typeHandlerRegistry;
+  // 对象工厂，负责创建结果对象的实例。
   private final ObjectFactory objectFactory;
+  // 反射工厂，用于获取类元信息。
   private final ReflectorFactory reflectorFactory;
 
   // pending creations property tracker
   private final Map<Object, PendingRelation> pendingPccRelations = new IdentityHashMap<>();
-
+  // 缓存（Map）：用于嵌套结果映射，防止循环引用并实现一对多聚合。
   // nested resultMaps
   private final Map<CacheKey, Object> nestedResultObjects = new HashMap<>();
+  // 缓存（Map）：存储当前正在处理的父对象，用于处理循环嵌套。
   private final Map<String, Object> ancestorObjects = new HashMap<>();
   private Object previousRowValue;
 
   // multiple resultSets
   private final Map<String, ResultMapping> nextResultMaps = new HashMap<>();
+  // 处理多结果集（Multiple ResultSets）时的未完成关系。
   private final Map<CacheKey, List<PendingRelation>> pendingRelations = new HashMap<>();
 
   // Cached AutoMappings
+  // 自动映射缓存，提高重复查询时的列名匹配性能。
   private final Map<String, List<UnMappedColumnAutoMapping>> autoMappingsCache = new HashMap<>();
   private final Map<String, List<String>> constructorAutoMappingColumns = new HashMap<>();
 
   // temporary marking flag that indicate using constructor mapping (use field to reduce memory usage)
   private boolean useConstructorMappings;
 
+  // 主要用于处理 多结果集（Multiple ResultSets） 场景下的数据关联
+  // 在 MyBatis 执行存储过程或某些支持返回多个 ResultSet 的数据库操作时，可能会出现这种情况：
+  // 第一个结果集（Parent）包含了主表数据（如 Order）。
+  // 第二个结果集（Child）包含了明细数据（如 OrderItem）。
+  // 当 MyBatis 在处理第一个结果集时，如果发现某个属性（propertyMapping）指向了后续的结果集，它不能立刻完成映射（因为数据还没出来）。
+  // 于是，它会创建一个 PendingRelation 对象，把当前的父对象和对应的映射规则暂时存起来，“挂”在内存里，等待后续结果集的到来。
   private static class PendingRelation {
+    // 指向父对象的包装器。
+    // MetaObject 是 MyBatis 反射系统的核心。它持有已经实例化的父对象（例如一个 Order 实例）。
+    // 通过这个 metaObject，MyBatis 可以在稍后拿到子表数据时，利用反射安全地调用 order.setItems(itemList) 或 order.getItems().add(item)。
     public MetaObject metaObject;
+    // 指向映射规则。
+    // 要把数据填充到父对象的哪个属性（property="items"）。
     public ResultMapping propertyMapping;
   }
 
+  // 存在是为了优化 MyBatis 的 自动映射（Auto-Mapping） 性能
+  // 当你在 MyBatis 中没有在 <resultMap> 里显式配置某个数据库列，但开启了 autoMapping（或者使用 resultType）时，MyBatis 会尝试根据列名（如 user_name）去匹配 Java
+  // 属性（如 userName）。
+  // 解析列名与属性名的对应关系、查找对应的 TypeHandler 是一个耗时的反射过程。MyBatis 会在第一次查询时，将这些未映射列的自动匹配关系封装进 UnMappedColumnAutoMapping
+  // 对象中并存入缓存（autoMappingsCache）。
   private static class UnMappedColumnAutoMapping {
+    // 数据库结果集（ResultSet）中的列名。
+    // 存储原始的列名或别名（如 USER_ID），用于从 JDBC 的 ResultSet 中通过名称取值。
     private final String column;
+    // Java 对象中的属性名。
+    // 存储匹配成功后的实体类字段名（如 userId），后续会交给 MetaObject 通过反射调用 Setter 方法。
     private final String property;
+    // 类型处理器。
+    // 这是自动映射的灵魂。它记录了应该用哪个处理器（如 LongTypeHandler）来执行具体的取值操作。
+    // MyBatis 会根据列的 JDBC 类型和属性的 Java 类型预先选定好这个处理器。
     private final TypeHandler<?> typeHandler;
+    // 标记目标属性是否为基本数据类型（如 int, boolean）。
     private final boolean primitive;
 
     public UnMappedColumnAutoMapping(String column, String property, TypeHandler<?> typeHandler, boolean primitive) {
@@ -206,42 +251,49 @@ public class DefaultResultSetHandler implements ResultSetHandler {
 
   //
   // HANDLE RESULT SETS
-  //
+  // 核心主入口。如果把 MyBatis 比作一条流水线，那么这个方法就是最后的**“质检与包装车间”**。
+  // 它负责把数据库返回的一个或多个原始结果集（ResultSet），按照配置好的规则，组装成 Java 对象列表。
   @Override
   public List<Object> handleResultSets(Statement stmt) throws SQLException {
     ErrorContext.instance().activity("handling results").object(mappedStatement.getId());
-
+    // 用于存放最终结果的容器。
     final List<Object> multipleResults = new ArrayList<>();
 
     int resultSetCount = 0;
+    // ResultSetWrapper: MyBatis 对 JDBC 原生 ResultSet 的高度封装（包含列名、类型等元数据缓存），避免在循环中重复调用昂贵的 JDBC 元数据 API。
     ResultSetWrapper rsw = getFirstResultSet(stmt);
 
     List<ResultMap> resultMaps = mappedStatement.getResultMaps();
     int resultMapCount = resultMaps.size();
+    // // 校验是否有定义映射规则
     validateResultMapsCount(rsw, resultMapCount);
     while (rsw != null && resultMapCount > resultSetCount) {
       ResultMap resultMap = resultMaps.get(resultSetCount);
-      handleResultSet(rsw, resultMap, multipleResults, null);
-      rsw = getNextResultSet(stmt);
-      cleanUpAfterHandlingResultSet();
+      handleResultSet(rsw, resultMap, multipleResults, null); // 执行核心映射逻辑
+      rsw = getNextResultSet(stmt); // 尝试移动到下一个结果集
+      cleanUpAfterHandlingResultSet(); // 清理嵌套查询相关的临时缓存
       resultSetCount++;
     }
-
+    // 3. 第二阶段：处理存储过程的多结果集（关联映射）
     String[] resultSets = mappedStatement.getResultSets();
     if (resultSets != null) {
       while (rsw != null && resultSetCount < resultSets.length) {
+        // // 从 nextResultMaps 中寻找之前“挂起”的等待关系
         ResultMapping parentMapping = nextResultMaps.get(resultSets[resultSetCount]);
         if (parentMapping != null) {
           String nestedResultMapId = parentMapping.getNestedResultMapId();
           ResultMap resultMap = configuration.getResultMap(nestedResultMapId);
-          handleResultSet(rsw, resultMap, null, parentMapping);
+          // 当主结果集里有属性在等待后续数据时，这一步会将新的结果集数据“钩”回到之前创建的父对象上。
+          handleResultSet(rsw, resultMap, null, parentMapping); // 将结果挂载到父对象
         }
         rsw = getNextResultSet(stmt);
         cleanUpAfterHandlingResultSet();
         resultSetCount++;
       }
     }
-
+    // 结果收拢与返回
+    // 如果结果列表里只有一个 List（绝大多数情况），它会把内层的 List 剥出来直接返回（如 List<User>）。
+    // 如果确实有多个结果集，它会返回一个嵌套的 List<List<Object>>。
     return collapseSingleResultList(multipleResults);
   }
 
@@ -263,14 +315,17 @@ public class DefaultResultSetHandler implements ResultSetHandler {
     return new DefaultCursor<>(this, resultMap, rsw, rowBounds);
   }
 
+  // 虽然 JDBC 是一套标准，但不同数据库驱动（如 Oracle, HSQLDB, MySQL）在获取“第一个结果集”时的行为并不统一
+  // getFirstResultSet 的使命就是：排除万难，拿到 Statement 执行后的第一个有效 ResultSet。
   private ResultSetWrapper getFirstResultSet(Statement stmt) throws SQLException {
     ResultSet rs = null;
     SQLException e1 = null;
-
+    // 第一阶段：常规尝试
     try {
       rs = stmt.getResultSet();
     } catch (SQLException e) {
       // Oracle throws ORA-17283 for implicit cursor
+      // Oracle 可能会抛出 ORA-17283，表示当前虽然有结果但不是常规 ResultSet
       e1 = e;
     }
 
@@ -278,6 +333,8 @@ public class DefaultResultSetHandler implements ResultSetHandler {
       while (rs == null) {
         // move forward to get the first resultSet in case the driver
         // doesn't return the resultSet as the first result (HSQLDB)
+        // 有些驱动（如 HSQLDB）在执行后可能需要调用 getMoreResults() 才能把指针移动到第一个有效的 ResultSet 上。
+        // getMoreResults() 返回 false 且 getUpdateCount() == -1：这在 JDBC 规范中表示所有结果已处理完毕。
         if (stmt.getMoreResults()) {
           rs = stmt.getResultSet();
         } else if (stmt.getUpdateCount() == -1) {
@@ -337,16 +394,22 @@ public class DefaultResultSetHandler implements ResultSetHandler {
     }
   }
 
+  // 是处理单个结果集（ResultSet）的核心分发方法。
+  // 它的作用是根据当前的上下文（是嵌套结果还是主结果、是否有自定义处理器）来决定如何读取行数据，并确保资源最后得到释放。
   private void handleResultSet(ResultSetWrapper rsw, ResultMap resultMap, List<Object> multipleResults,
       ResultMapping parentMapping) throws SQLException {
     try {
+      // 模式 A：关联处理模式 (Nested/Multiple ResultSets)
       if (parentMapping != null) {
         handleRowValues(rsw, resultMap, null, RowBounds.DEFAULT, parentMapping);
+        // 模式 B：默认收集模式 (Standard Mapping)
+        // 触发条件：最常见的场景。用户调用 sqlSession.selectList() 且没有传入自定义的 ResultHandler。
       } else if (resultHandler == null) {
         DefaultResultHandler defaultResultHandler = new DefaultResultHandler(objectFactory);
         handleRowValues(rsw, resultMap, defaultResultHandler, rowBounds, null);
         multipleResults.add(defaultResultHandler.getResultList());
       } else {
+        // 模式 C：自定义处理器模式 (Custom ResultHandler)
         handleRowValues(rsw, resultMap, resultHandler, rowBounds, null);
       }
     } finally {
@@ -393,19 +456,26 @@ public class DefaultResultSetHandler implements ResultSetHandler {
     }
   }
 
+  // MyBatis 处理“简单映射”（即没有复杂的 collection 或 association 嵌套结果集）的核心循环逻辑。它负责遍历 JDBC ResultSet 的每一行，并将其转换为 Java 对象。
   private void handleRowValuesForSimpleResultMap(ResultSetWrapper rsw, ResultMap resultMap,
       ResultHandler<?> resultHandler, RowBounds rowBounds, ResultMapping parentMapping) throws SQLException {
     final boolean useCollectionConstructorInjection = resultMap.hasResultMapsUsingConstructorCollection();
-
+    // ResultContext: 这是一个简单的上下文容器，用来统计当前已经处理了多少行，以及支持用户手动停止处理（context.stop()）。
     DefaultResultContext<Object> resultContext = new DefaultResultContext<>();
     ResultSet resultSet = rsw.getResultSet();
     skipRows(resultSet, rowBounds);
+    // 行遍历
     while (shouldProcessMoreRows(resultContext, rowBounds) && !resultSet.isClosed() && resultSet.next()) {
+      // 处理 XML 中的 <discriminator> 标签
+      // 作用：根据当前行中某个字段的值（比如 type 字段），动态决定使用哪个 ResultMap。例如：如果 type=1 转为 Dog 对象，type=2 转为 Cat 对象。
       ResultMap discriminatedResultMap = resolveDiscriminatedResultMap(rsw, resultMap, null);
+      // 这是真正的“脏活累活”执行者。它会调用 ObjectFactory 创建 Java 对象，并调用 TypeHandler 从 ResultSet 读取列值塞进对象属性。
       Object rowValue = getRowValue(rsw, discriminatedResultMap, null, null);
       if (!useCollectionConstructorInjection) {
+        // 绝大多数情况走这里。storeObject 会调用 resultHandler.handleResult，把创建好的对象加入到最终的 List 结果集中。
         storeObject(resultHandler, resultContext, rowValue, parentMapping, resultSet);
       } else {
+        // 逻辑：由于构造器必须一次性传入所有参数，而集合数据可能跨越多行，MyBatis 会先创建一个“待定（Pending）”状态的对象，等后续行的数据凑齐后再真正实例化。
         if (!(rowValue instanceof PendingConstructorCreation)) {
           throw new ExecutorException("Expected result object to be a pending constructor creation!");
         }
@@ -457,7 +527,7 @@ public class DefaultResultSetHandler implements ResultSetHandler {
   //
   // GET VALUE FROM ROW FOR SIMPLE RESULT MAP
   //
-
+  // MyBatis 映射流程中的单行执行官。它的核心任务是：针对当前 ResultSet 的这一行数据，完整地构建出一个 Java 对象（包含属性填充和懒加载准备）。
   private Object getRowValue(ResultSetWrapper rsw, ResultMap resultMap, String columnPrefix, CacheKey parentRowKey)
       throws SQLException {
     final ResultLoaderMap lazyLoader = new ResultLoaderMap();

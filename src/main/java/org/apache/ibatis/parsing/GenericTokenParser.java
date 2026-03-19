@@ -18,6 +18,13 @@ package org.apache.ibatis.parsing;
 /**
  * @author Clinton Begin
  */
+// GenericTokenParser 是 MyBatis 内部一个非常精巧且高频使用的通用占位符解析器。它不负责具体的业务逻辑，而是专门负责“找词”和“替换”。
+// GenericTokenParser 的主要作用是搜索并识别指定格式的占位符（Token），然后交给处理器进行替换。
+// 在 MyBatis 中，它最典型的应用场景是解析 SQL 语句中的 #{} 和 ${}。
+// 输入：一段带有特定标记的字符串（如：SELECT * FROM user WHERE id = #{id}）。
+// 识别：它会找出 #{ 和 } 之间的内容（即 id）。
+// 处理：它将提取出的内容交给一个 TokenHandler（令牌处理器），由后者决定把这一块替换成什么（比如替换成 ? 或者具体的参数值）。
+// 输出：处理后的最终字符串。
 public class GenericTokenParser {
 
   private final String openToken;

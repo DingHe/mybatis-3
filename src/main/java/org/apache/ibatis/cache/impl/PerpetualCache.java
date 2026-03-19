@@ -24,6 +24,11 @@ import org.apache.ibatis.cache.CacheException;
 /**
  * @author Clinton Begin
  */
+// MyBatis 缓存机制中最基础、最核心的实现类
+// PerpetualCache 的字面意思是“永久缓存”。它的作用非常纯粹：
+// 基础存储介质：它是 MyBatis 一级缓存（Local Cache） 的默认实现，也是 二级缓存 的底层存储载体。
+// 简单包装：它本质上是对 Java 原生 HashMap 的一个简单封装。
+// 无策略缓存：它本身不包含任何缓存淘汰算法（如 LRU、FIFO）。除非手动调用 clear() 或 removeObject()，否则存入的数据会一直保留在内存中，直到对象被销毁。
 public class PerpetualCache implements Cache {
 
   private final String id;

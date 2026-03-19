@@ -18,6 +18,9 @@ package org.apache.ibatis.parsing;
 /**
  * @author Clinton Begin
  */
+// TokenHandler 是一个令牌处理器接口。
+// 如果把 GenericTokenParser 比作一个“快递员”，负责在长长的文本中寻找被 #{} 或 ${} 包裹的“包裹”；
+// 那么 TokenHandler 就是“收件人”，负责打开包裹并决定如何处理里面的东西。
 public interface TokenHandler {
   String handleToken(String content);
 }
